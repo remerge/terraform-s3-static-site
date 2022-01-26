@@ -1,11 +1,15 @@
 locals {
-  records = toset(concat([var.fqdn], var.aliases))
+  records = toset(concat([var.domain], var.aliases))
 }
 
 resource "aws_s3_bucket" "main" {
-  bucket = var.fqdn
+  bucket = var.domain
   acl    = "public-read"
-  website { redirect_all_requests_to = var.target }
+  website {
+    error_document           = "index.html"
+    index_document           = "index.html"
+    redirect_all_requests_to = var.redirect_target
+  }
 }
 
 resource "aws_s3_bucket_policy" "main" {
@@ -30,9 +34,11 @@ resource "aws_cloudfront_distribution" "main" {
 
   is_ipv6_enabled = true
 
+  default_root_object = "index.html"
+
   origin {
     origin_id   = aws_s3_bucket.main.id
-    domain_name = aws_s3_bucket.main.website_endpoint
+    domain_name = aws_s3_bucket.main.bucket_regional_domain_name
 
     custom_origin_config {
       http_port              = "80"
@@ -40,6 +46,20 @@ resource "aws_cloudfront_distribution" "main" {
       origin_protocol_policy = "http-only"
       origin_ssl_protocols   = ["TLSv1", "TLSv1.1", "TLSv1.2"]
     }
+  }
+
+  custom_error_response {
+    error_caching_min_ttl = 300
+    error_code            = 403
+    response_code         = 200
+    response_page_path    = "/index.html"
+  }
+
+  custom_error_response {
+    error_caching_min_ttl = 300
+    error_code            = 404
+    response_code         = 200
+    response_page_path    = "/index.html"
   }
 
   default_cache_behavior {
@@ -51,14 +71,25 @@ resource "aws_cloudfront_distribution" "main" {
     compress = true
 
     min_ttl     = 0
-    default_ttl = 86400
-    max_ttl     = 31536000
+    default_ttl = 1800
+    max_ttl     = 3600
 
-    viewer_protocol_policy = "allow-all"
+    viewer_protocol_policy = "redirect-to-https"
 
     forwarded_values {
       query_string = false
-      cookies { forward = "none" }
+      cookies {
+        forward = "none"
+      }
+    }
+
+    dynamic "lambda_function_association" {
+      for_each = var.lambda_edge_arns
+      content {
+        event_type   = lambda_function_association.value
+        lambda_arn   = lambda_function_association.key
+        include_body = false
+      }
     }
   }
 
@@ -76,18 +107,23 @@ resource "aws_cloudfront_distribution" "main" {
 }
 
 resource "aws_acm_certificate" "main" {
-  domain_name               = var.fqdn
+  domain_name               = var.domain
   validation_method         = "DNS"
   subject_alternative_names = var.aliases
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 data "aws_route53_zone" "main" {
-  name         = coalesce(var.zone, var.fqdn)
+  name         = coalesce(var.zone_id, var.domain)
   private_zone = false
 }
 
 resource "aws_route53_record" "validation" {
   zone_id = data.aws_route53_zone.main.zone_id
+
+  allow_overwrite = true
 
   for_each = {
     for dvo in aws_acm_certificate.main.domain_validation_options : dvo.domain_name => {
@@ -97,13 +133,10 @@ resource "aws_route53_record" "validation" {
     }
   }
 
-  name = each.value.name
-  type = each.value.type
-  ttl  = 60
-
-  records = [
-    each.value.record,
-  ]
+  name    = each.value.name
+  type    = each.value.type
+  ttl     = 60
+  records = [each.value.record]
 }
 
 resource "aws_acm_certificate_validation" "main" {
@@ -123,7 +156,7 @@ resource "aws_route53_record" "ipv4" {
   alias {
     name                   = aws_cloudfront_distribution.main.domain_name
     zone_id                = aws_cloudfront_distribution.main.hosted_zone_id
-    evaluate_target_health = false
+    evaluate_target_health = true
   }
 }
 
@@ -136,6 +169,6 @@ resource "aws_route53_record" "ipv6" {
   alias {
     name                   = aws_cloudfront_distribution.main.domain_name
     zone_id                = aws_cloudfront_distribution.main.hosted_zone_id
-    evaluate_target_health = false
+    evaluate_target_health = true
   }
 }
