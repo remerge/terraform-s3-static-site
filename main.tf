@@ -116,7 +116,7 @@ resource "aws_acm_certificate" "main" {
 }
 
 data "aws_route53_zone" "main" {
-  name         = coalesce(var.zone_id, var.domain)
+  name         = coalesce(var.zone, var.domain)
   private_zone = false
 }
 

@@ -1,6 +1,6 @@
-variable "zone_id" {
+variable "zone" {
   type        = string
-  description = "Route53 Zone ID of the domain (required unless domain is zone apex)"
+  description = "Route53 zone name (required unless domain is zone apex)"
   default     = null
 }
 
