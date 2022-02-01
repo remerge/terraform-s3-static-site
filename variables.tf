@@ -18,6 +18,7 @@ variable "aliases" {
 variable "redirect_target" {
   type        = string
   description = "Redirect all requests to this URL"
+  default     = null
 }
 
 variable "lambda_edge_arns" {
