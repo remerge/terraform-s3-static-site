@@ -3,8 +3,9 @@ locals {
 }
 
 resource "aws_s3_bucket" "main" {
-  bucket = var.domain
-  acl    = "public-read"
+  provider = aws.bucket
+  bucket   = var.domain
+  acl      = "public-read"
   website {
     error_document           = "index.html"
     index_document           = "index.html"
