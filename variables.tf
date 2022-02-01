@@ -10,9 +10,9 @@ variable "domain" {
 }
 
 variable "aliases" {
-  type        = list(string)
-  description = "List of aliases to the domain"
-  default     = []
+  type        = map(string)
+  description = "Map of aliases of the domain to their Route53 zone name"
+  default     = {}
 }
 
 variable "redirect_target" {

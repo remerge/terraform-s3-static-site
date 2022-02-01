@@ -1,5 +1,5 @@
 locals {
-  records = toset(concat([var.domain], var.aliases))
+  domains = merge({ (var.domain) = var.zone }, var.aliases)
 }
 
 resource "aws_s3_bucket" "main" {
@@ -32,7 +32,7 @@ data "aws_iam_policy_document" "bucket_policy" {
 
 resource "aws_cloudfront_distribution" "main" {
   enabled = true
-  aliases = local.records
+  aliases = keys(local.domains)
 
   is_ipv6_enabled = true
 
@@ -111,22 +111,19 @@ resource "aws_cloudfront_distribution" "main" {
 resource "aws_acm_certificate" "main" {
   domain_name               = var.domain
   validation_method         = "DNS"
-  subject_alternative_names = var.aliases
+  subject_alternative_names = keys(var.aliases)
   lifecycle {
     create_before_destroy = true
   }
 }
 
-data "aws_route53_zone" "main" {
-  name         = coalesce(var.zone, var.domain)
+data "aws_route53_zone" "all" {
+  for_each     = local.domains
+  name         = each.value
   private_zone = false
 }
 
 resource "aws_route53_record" "validation" {
-  zone_id = data.aws_route53_zone.main.zone_id
-
-  allow_overwrite = true
-
   for_each = {
     for dvo in aws_acm_certificate.main.domain_validation_options : dvo.domain_name => {
       name   = dvo.resource_record_name
@@ -135,10 +132,13 @@ resource "aws_route53_record" "validation" {
     }
   }
 
+  zone_id = data.aws_route53_zone.all[each.key].zone_id
   name    = each.value.name
   type    = each.value.type
   ttl     = 60
   records = [each.value.record]
+
+  allow_overwrite = true
 }
 
 resource "aws_acm_certificate_validation" "main" {
@@ -150,10 +150,11 @@ resource "aws_acm_certificate_validation" "main" {
 }
 
 resource "aws_route53_record" "ipv4" {
-  zone_id  = data.aws_route53_zone.main.zone_id
-  for_each = local.records
-  name     = each.value
-  type     = "A"
+  for_each = local.domains
+
+  zone_id = data.aws_route53_zone.all[each.key].zone_id
+  name    = each.key
+  type    = "A"
 
   alias {
     name                   = aws_cloudfront_distribution.main.domain_name
@@ -163,10 +164,11 @@ resource "aws_route53_record" "ipv4" {
 }
 
 resource "aws_route53_record" "ipv6" {
-  zone_id  = data.aws_route53_zone.main.zone_id
-  for_each = local.records
-  name     = each.value
-  type     = "AAAA"
+  for_each = local.domains
+
+  zone_id = data.aws_route53_zone.all[each.key].zone_id
+  name    = each.key
+  type    = "AAAA"
 
   alias {
     name                   = aws_cloudfront_distribution.main.domain_name
