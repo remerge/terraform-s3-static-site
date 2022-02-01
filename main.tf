@@ -7,8 +7,8 @@ resource "aws_s3_bucket" "main" {
   bucket   = var.domain
   acl      = "public-read"
   website {
-    error_document           = "index.html"
-    index_document           = "index.html"
+    error_document           = var.redirect_target == null ? "index.html" : null
+    index_document           = var.redirect_target == null ? "index.html" : null
     redirect_all_requests_to = var.redirect_target
   }
 }
