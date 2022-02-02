@@ -31,8 +31,10 @@ data "aws_iam_policy_document" "bucket_policy" {
 }
 
 resource "aws_cloudfront_distribution" "main" {
+  for_each = local.domains
+
   enabled = true
-  aliases = keys(local.domains)
+  aliases = [each.key]
 
   is_ipv6_enabled = true
 
@@ -102,77 +104,65 @@ resource "aws_cloudfront_distribution" "main" {
   }
 
   viewer_certificate {
-    acm_certificate_arn      = aws_acm_certificate_validation.main.certificate_arn
+    acm_certificate_arn      = aws_acm_certificate_validation.main[each.key].certificate_arn
     ssl_support_method       = "sni-only"
     minimum_protocol_version = "TLSv1"
   }
 }
 
-resource "aws_acm_certificate" "main" {
-  domain_name               = var.domain
-  validation_method         = "DNS"
-  subject_alternative_names = keys(var.aliases)
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-data "aws_route53_zone" "all" {
-  for_each     = local.domains
-  name         = each.value
-  private_zone = false
-}
-
-resource "aws_route53_record" "validation" {
-  for_each = {
-    for dvo in aws_acm_certificate.main.domain_validation_options : dvo.domain_name => {
-      name   = dvo.resource_record_name
-      type   = dvo.resource_record_type
-      record = dvo.resource_record_value
-    }
-  }
-
-  zone_id = data.aws_route53_zone.all[each.key].zone_id
-  name    = each.value.name
-  type    = each.value.type
-  ttl     = 60
-  records = [each.value.record]
-
-  allow_overwrite = true
-}
-
 resource "aws_acm_certificate_validation" "main" {
-  certificate_arn = aws_acm_certificate.main.arn
+  for_each        = local.domains
+  certificate_arn = aws_acm_certificate.main[each.key].arn
   validation_record_fqdns = [
     for record in aws_route53_record.validation
     : record.fqdn
   ]
 }
 
+resource "aws_acm_certificate" "main" {
+  for_each          = local.domains
+  domain_name       = each.key
+  validation_method = "DNS"
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+data "aws_route53_zone" "main" {
+  for_each     = local.domains
+  name         = each.value
+  private_zone = false
+}
+
+resource "aws_route53_record" "validation" {
+  for_each = aws_acm_certificate.main
+  zone_id  = data.aws_route53_zone.main[each.key].zone_id
+  name     = tolist(each.value.domain_validation_options)[0].resource_record_name
+  type     = tolist(each.value.domain_validation_options)[0].resource_record_type
+  ttl      = 60
+  records  = [tolist(each.value.domain_validation_options)[0].resource_record_value]
+}
+
 resource "aws_route53_record" "ipv4" {
-  for_each = local.domains
-
-  zone_id = data.aws_route53_zone.all[each.key].zone_id
-  name    = each.key
-  type    = "A"
-
+  for_each = aws_cloudfront_distribution.main
+  zone_id  = data.aws_route53_zone.main[each.key].zone_id
+  name     = each.key
+  type     = "A"
   alias {
-    name                   = aws_cloudfront_distribution.main.domain_name
-    zone_id                = aws_cloudfront_distribution.main.hosted_zone_id
+    name                   = each.value.domain_name
+    zone_id                = each.value.hosted_zone_id
     evaluate_target_health = true
   }
 }
 
 resource "aws_route53_record" "ipv6" {
-  for_each = local.domains
-
-  zone_id = data.aws_route53_zone.all[each.key].zone_id
-  name    = each.key
-  type    = "AAAA"
-
+  for_each = aws_cloudfront_distribution.main
+  zone_id  = data.aws_route53_zone.main[each.key].zone_id
+  name     = each.key
+  type     = "AAAA"
   alias {
-    name                   = aws_cloudfront_distribution.main.domain_name
-    zone_id                = aws_cloudfront_distribution.main.hosted_zone_id
+    name                   = each.value.domain_name
+    zone_id                = each.value.hosted_zone_id
     evaluate_target_health = true
   }
 }
