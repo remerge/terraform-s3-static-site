@@ -38,7 +38,7 @@ resource "aws_cloudfront_distribution" "main" {
 
   is_ipv6_enabled = true
 
-  default_root_object = "index.html"
+  default_root_object = var.redirect_target == null ? "index.html" : null
 
   origin {
     origin_id   = aws_s3_bucket.main.id
