@@ -5,12 +5,16 @@ locals {
 resource "aws_s3_bucket" "main" {
   provider = aws.bucket
   bucket   = var.domain
-  acl      = "public-read"
   website {
     error_document           = var.redirect_target == null ? "index.html" : null
     index_document           = var.redirect_target == null ? "index.html" : null
     redirect_all_requests_to = var.redirect_target
   }
+}
+
+resource "aws_s3_bucket_acl" "main" {
+  bucket = aws_s3_bucket.main.id
+  acl    = "public-read"
 }
 
 resource "aws_s3_bucket_policy" "main" {
