@@ -5,16 +5,12 @@ locals {
 resource "aws_s3_bucket" "main" {
   provider = aws.bucket
   bucket   = var.domain
-  website {
-    error_document           = var.redirect_target == null ? "index.html" : null
-    index_document           = var.redirect_target == null ? "index.html" : null
-    redirect_all_requests_to = var.redirect_target
-  }
 }
 
 resource "aws_s3_bucket_acl" "main" {
-  bucket = aws_s3_bucket.main.id
-  acl    = "public-read"
+  provider = aws.bucket
+  bucket   = aws_s3_bucket.main.id
+  acl      = "public-read"
 }
 
 resource "aws_s3_bucket_policy" "main" {
@@ -31,6 +27,33 @@ data "aws_iam_policy_document" "bucket_policy" {
       type        = "*"
       identifiers = ["*"]
     }
+  }
+}
+
+resource "aws_s3_bucket_website_configuration" "main-static" {
+  count = var.redirect_target == null ? 1 : 0
+
+  provider = aws.bucket
+  bucket   = aws_s3_bucket.main.id
+
+  index_document {
+    suffix = "index.html"
+  }
+
+  error_document {
+    key = "index.html"
+  }
+}
+
+resource "aws_s3_bucket_website_configuration" "main-redirect" {
+  count = var.redirect_target == null ? 0 : 1
+
+  provider = aws.bucket
+  bucket   = aws_s3_bucket.main.id
+
+  redirect_all_requests_to {
+    host_name = trimprefix(var.redirect_target, "https://")
+    protocol  = "https"
   }
 }
 
