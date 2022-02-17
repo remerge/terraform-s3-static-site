@@ -30,30 +30,32 @@ data "aws_iam_policy_document" "bucket_policy" {
   }
 }
 
-resource "aws_s3_bucket_website_configuration" "main-static" {
-  count = var.redirect_target == null ? 1 : 0
-
+resource "aws_s3_bucket_website_configuration" "main" {
   provider = aws.bucket
   bucket   = aws_s3_bucket.main.id
 
-  index_document {
-    suffix = "index.html"
+  dynamic "index_document" {
+    for_each = var.redirect_target == null ? ["index.html"] : []
+    content {
+      suffix = index_document.value
+    }
   }
 
-  error_document {
-    key = "index.html"
+  dynamic "error_document" {
+    for_each = var.redirect_target == null ? ["index.html"] : []
+    content {
+      key = error_document.value
+    }
   }
-}
 
-resource "aws_s3_bucket_website_configuration" "main-redirect" {
-  count = var.redirect_target == null ? 0 : 1
-
-  provider = aws.bucket
-  bucket   = aws_s3_bucket.main.id
-
-  redirect_all_requests_to {
-    host_name = trimprefix(var.redirect_target, "https://")
-    protocol  = "https"
+  dynamic "redirect_all_requests_to" {
+    for_each = var.redirect_target == null ? [] : [
+      trimprefix(var.redirect_target, "https://")
+    ]
+    content {
+      host_name = redirect_all_requests_to.value
+      protocol  = "https"
+    }
   }
 }
 
@@ -69,7 +71,7 @@ resource "aws_cloudfront_distribution" "main" {
 
   origin {
     origin_id   = aws_s3_bucket.main.id
-    domain_name = aws_s3_bucket.main.website_endpoint
+    domain_name = aws_s3_bucket_website_configuration.main.website_endpoint
 
     custom_origin_config {
       http_port              = "80"
